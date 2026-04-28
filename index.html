@@ -1,0 +1,947 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Multi-Agent 智能体协同平台</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+:root {
+  --bg0: #020818;
+  --bg1: #040f28;
+  --bg2: #071633;
+  --bg3: #0a1f47;
+  --panel: rgba(6,20,55,0.85);
+  --border: rgba(40,130,255,0.18);
+  --border2: rgba(40,130,255,0.35);
+  --text1: #e4eeff;
+  --text2: #7ca3d8;
+  --text3: #3a6ca8;
+  --accent: #2a7fff;
+  --accent2: #00d4ff;
+  --green: #00e5a0;
+  --yellow: #f0c040;
+  --red: #ff4d6a;
+  --purple: #9b6dff;
+  --font: 'PingFang SC', 'Microsoft YaHei', -apple-system, sans-serif;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background: var(--bg0);
+  color: var(--text1);
+  font-family: var(--font);
+  font-size: 12px;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 60% 40% at 20% 10%, rgba(20,60,150,0.25) 0%, transparent 70%),
+    radial-gradient(ellipse 50% 30% at 80% 90%, rgba(10,40,120,0.2) 0%, transparent 70%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* ─── 顶栏 ─────────────────────────── */
+header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 20px;
+  height: 48px;
+  background: rgba(4,12,35,0.95);
+  border-bottom: 1px solid var(--border2);
+  position: relative;
+  z-index: 10;
+  backdrop-filter: blur(8px);
+}
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--accent2);
+  letter-spacing: 0.5px;
+}
+.logo-icon {
+  width: 28px; height: 28px;
+  background: linear-gradient(135deg, var(--accent), var(--purple));
+  border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 14px;
+}
+nav { display: flex; gap: 4px; }
+.nav-btn {
+  padding: 5px 14px;
+  border-radius: 4px;
+  border: none;
+  background: transparent;
+  color: var(--text2);
+  font-family: var(--font);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all .2s;
+}
+.nav-btn.active, .nav-btn:hover {
+  background: rgba(42,127,255,0.15);
+  color: var(--accent2);
+}
+.header-right { display: flex; align-items: center; gap: 14px; }
+#clock { font-size: 18px; font-weight: 600; color: var(--text1); letter-spacing: 1px; }
+#clock-date { font-size: 10px; color: var(--text2); text-align: right; }
+.ws-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--red);
+  transition: background .3s;
+  box-shadow: 0 0 6px currentColor;
+}
+.ws-dot.connected { background: var(--green); }
+
+/* ─── 主布局 ────────────────────────── */
+main {
+  display: grid;
+  grid-template-columns: 280px 1fr 260px;
+  grid-template-rows: auto auto auto;
+  gap: 10px;
+  padding: 10px;
+  position: relative;
+  z-index: 1;
+}
+
+/* ─── 面板通用 ──────────────────────── */
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  backdrop-filter: blur(4px);
+  position: relative;
+  overflow: hidden;
+}
+.panel::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--border2), transparent);
+}
+.panel-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text2);
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+.panel-title::before {
+  content: '';
+  width: 3px; height: 12px;
+  background: var(--accent);
+  border-radius: 2px;
+}
+
+/* ─── 概览卡片 ──────────────────────── */
+.overview-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.stat-card {
+  background: rgba(10,25,70,0.6);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 10px;
+}
+.stat-label { font-size: 10px; color: var(--text3); margin-bottom: 4px; }
+.stat-value { font-size: 22px; font-weight: 700; color: var(--accent2); line-height: 1; }
+.stat-value.yellow { color: var(--yellow); }
+.stat-sub { font-size: 9px; color: var(--text3); margin-top: 3px; }
+
+/* ─── 趋势图 ────────────────────────── */
+.trend-wrap { height: 110px; position: relative; }
+
+/* ─── 雷达图 ────────────────────────── */
+.radar-wrap { height: 150px; }
+
+/* ─── 资源监控 ──────────────────────── */
+.resource-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px 10px;
+}
+.gauge-wrap { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.gauge { position: relative; width: 70px; height: 70px; }
+.gauge-label { font-size: 10px; color: var(--text2); text-align: center; }
+.gauge-val {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text1);
+}
+
+/* ─── 中间协同网络 ──────────────────── */
+.center-col {
+  grid-column: 2;
+  grid-row: 1 / 3;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.network-panel { flex: 1; min-height: 380px; }
+.network-svg { width: 100%; height: 100%; }
+
+/* ─── 事件流 ────────────────────────── */
+.events-panel { flex: 0 0 auto; }
+.event-list { display: flex; flex-direction: column; gap: 4px; max-height: 180px; overflow-y: auto; }
+.event-item {
+  display: grid;
+  grid-template-columns: 54px 1fr auto;
+  gap: 6px;
+  align-items: center;
+  padding: 5px 6px;
+  border-radius: 4px;
+  background: rgba(10,20,55,0.6);
+  font-size: 10px;
+  border-left: 2px solid var(--border);
+  animation: slideIn .3s ease;
+}
+.event-item.success { border-left-color: var(--green); }
+.event-item.warning { border-left-color: var(--yellow); }
+.event-item.error   { border-left-color: var(--red); }
+@keyframes slideIn { from { opacity:0; transform: translateY(-4px); } }
+.event-ts { color: var(--text3); font-size: 9px; }
+.event-action { color: var(--text1); }
+.event-result { color: var(--text2); font-size: 9px; text-align: right; max-width: 100px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.event-from { color: var(--accent2); font-weight: 600; }
+.event-arrow { color: var(--text3); }
+.event-to { color: var(--green); }
+
+/* ─── 右侧 ──────────────────────────── */
+.right-col {
+  grid-column: 3;
+  grid-row: 1 / 3;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.donut-wrap { display: flex; align-items: center; gap: 10px; }
+.donut-canvas { width: 90px !important; height: 90px !important; }
+.donut-legend { display: flex; flex-direction: column; gap: 5px; }
+.legend-item { display: flex; align-items: center; gap: 6px; font-size: 10px; color: var(--text2); }
+.legend-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.legend-count { margin-left: auto; padding-left: 8px; color: var(--text1); font-weight: 600; }
+
+/* ─── Top5 ──────────────────────────── */
+.top5-list { display: flex; flex-direction: column; gap: 5px; }
+.top5-item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11px;
+}
+.top5-rank {
+  width: 18px; height: 18px;
+  border-radius: 4px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 10px; font-weight: 700;
+  background: var(--bg3);
+  color: var(--accent2);
+  flex-shrink: 0;
+}
+.top5-rank.gold { background: rgba(240,192,64,0.2); color: var(--yellow); }
+.top5-name { flex: 1; color: var(--text1); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.top5-bar-wrap { width: 70px; height: 4px; background: var(--bg3); border-radius: 2px; overflow: hidden; flex-shrink: 0; }
+.top5-bar { height: 100%; background: var(--accent); border-radius: 2px; transition: width .5s ease; }
+.top5-count { width: 22px; text-align: right; color: var(--accent2); font-weight: 600; }
+
+/* ─── 告警 ──────────────────────────── */
+.alert-list { display: flex; flex-direction: column; gap: 6px; }
+.alert-item {
+  display: flex;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 5px;
+  background: rgba(10,20,55,0.5);
+  border: 1px solid var(--border);
+  animation: slideIn .3s;
+}
+.alert-icon { font-size: 14px; flex-shrink: 0; }
+.alert-body { flex: 1; }
+.alert-title { font-size: 11px; color: var(--text1); font-weight: 600; }
+.alert-sub { font-size: 9px; color: var(--text3); margin-top: 2px; }
+.alert-time { font-size: 9px; color: var(--text3); white-space: nowrap; }
+.alert-item.danger { border-color: rgba(255,77,106,0.3); }
+.alert-item.warning { border-color: rgba(240,192,64,0.3); }
+.alert-item.info { border-color: rgba(0,212,255,0.2); }
+
+/* ─── 底部横幅统计 ──────────────────── */
+.bottom-bar {
+  grid-column: 1 / 4;
+  display: flex;
+  gap: 10px;
+}
+.bottom-bar .panel { flex: 1; }
+
+/* ─── 状态标签 ──────────────────────── */
+.badge {
+  display: inline-block;
+  padding: 1px 7px;
+  border-radius: 10px;
+  font-size: 9px;
+  font-weight: 600;
+}
+.badge.running { background: rgba(0,229,160,0.15); color: var(--green); border: 1px solid rgba(0,229,160,0.3); }
+.badge.idle    { background: rgba(42,127,255,0.15); color: var(--accent2); border: 1px solid rgba(42,127,255,0.3); }
+.badge.busy    { background: rgba(240,192,64,0.15); color: var(--yellow); border: 1px solid rgba(240,192,64,0.3); }
+.badge.offline { background: rgba(255,77,106,0.1);  color: var(--red);    border: 1px solid rgba(255,77,106,0.25); }
+
+/* ─── 网络节点动画 ──────────────────── */
+@keyframes pulse { 0%,100%{ r:18; opacity:1; } 50%{ r:21; opacity:.85; } }
+@keyframes orbit { from{ transform:rotate(0deg); } to{ transform:rotate(360deg); } }
+.node-pulse { animation: pulse 2.5s ease-in-out infinite; }
+
+/* ─── 滚动条 ────────────────────────── */
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+
+/* ─── 数字滚动 ──────────────────────── */
+@keyframes countUp { from { opacity:0; transform:translateY(4px); } to { opacity:1; transform:none; } }
+.count-anim { animation: countUp .3s ease; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <div class="logo-icon">⬡</div>
+    Multi-Agent 智能体协同平台
+  </div>
+  <nav>
+    <button class="nav-btn active">全局总览</button>
+    <button class="nav-btn">智能体管理</button>
+    <button class="nav-btn">任务协同</button>
+    <button class="nav-btn">知识中心</button>
+    <button class="nav-btn">系统监控</button>
+    <button class="nav-btn">告警中心</button>
+  </nav>
+  <div class="header-right">
+    <div>
+      <div id="clock">--:--:--</div>
+      <div id="clock-date">----</div>
+    </div>
+    <div class="ws-dot" id="ws-dot" title="WebSocket"></div>
+  </div>
+</header>
+
+<main>
+
+  <!-- ─── 左列：概览 + 趋势 + 雷达 + 资源 ─── -->
+  <div style="display:flex;flex-direction:column;gap:10px;">
+
+    <div class="panel">
+      <div class="panel-title">全局态势总览</div>
+      <div class="overview-grid">
+        <div class="stat-card">
+          <div class="stat-label">智能体总数</div>
+          <div class="stat-value" id="stat-agents">0</div>
+          <div class="stat-sub" id="stat-agents-sub">在线 0 · 高线 0</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">任务总数</div>
+          <div class="stat-value yellow" id="stat-tasks">0</div>
+          <div class="stat-sub" id="stat-tasks-sub">进行中 0 · 已完成 0</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">协同交互次数</div>
+          <div class="stat-value" id="stat-interactions">0</div>
+          <div class="stat-sub" id="stat-interactions-sub">今日 0</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">数据处理量</div>
+          <div class="stat-value" id="stat-data">0</div>
+          <div class="stat-sub">TB · 今日 0</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-title">任务执行趋势</div>
+      <div class="trend-wrap">
+        <canvas id="trend-chart"></canvas>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-title">智能体能力分布</div>
+      <div class="radar-wrap">
+        <canvas id="radar-chart"></canvas>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-title">系统资源监控</div>
+      <div class="resource-grid">
+        <div class="gauge-wrap">
+          <div class="gauge"><canvas id="g-cpu"></canvas><div class="gauge-val" id="gv-cpu">0%</div></div>
+          <div class="gauge-label">CPU</div>
+        </div>
+        <div class="gauge-wrap">
+          <div class="gauge"><canvas id="g-mem"></canvas><div class="gauge-val" id="gv-mem">0%</div></div>
+          <div class="gauge-label">内存</div>
+        </div>
+        <div class="gauge-wrap">
+          <div class="gauge"><canvas id="g-gpu"></canvas><div class="gauge-val" id="gv-gpu">0%</div></div>
+          <div class="gauge-label">GPU</div>
+        </div>
+        <div class="gauge-wrap">
+          <div class="gauge"><canvas id="g-sto"></canvas><div class="gauge-val" id="gv-sto">0%</div></div>
+          <div class="gauge-label">存储</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ─── 中列：协同网络 + 事件流 ─── -->
+  <div class="center-col">
+
+    <div class="panel network-panel">
+      <div class="panel-title">
+        多智能体协同网络
+        <span style="margin-left:auto;font-size:9px;color:var(--text3);font-weight:400;letter-spacing:0;">
+          <span style="color:var(--green);">● 执行中</span>&nbsp;&nbsp;
+          <span style="color:var(--accent2);">● 空闲中</span>&nbsp;&nbsp;
+          <span style="color:var(--yellow);">● 高线</span>&nbsp;&nbsp;
+          <span style="color:var(--red);">● 告警</span>
+        </span>
+      </div>
+      <svg class="network-svg" id="network-svg" viewBox="0 0 520 340">
+        <defs>
+          <radialGradient id="glow-b" cx="50%" cy="50%" r="50%">
+            <stop offset="0%" stop-color="#2a7fff" stop-opacity="0.4"/>
+            <stop offset="100%" stop-color="#2a7fff" stop-opacity="0"/>
+          </radialGradient>
+          <radialGradient id="glow-c" cx="50%" cy="50%" r="50%">
+            <stop offset="0%" stop-color="#00d4ff" stop-opacity="0.5"/>
+            <stop offset="100%" stop-color="#00d4ff" stop-opacity="0"/>
+          </radialGradient>
+          <filter id="glow">
+            <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+            <feMerge><feMergeNode in="coloredBlur"/><feMergeNode in="SourceGraphic"/></feMerge>
+          </filter>
+        </defs>
+        <!-- Central glow -->
+        <circle cx="260" cy="172" r="60" fill="url(#glow-b)" />
+        <circle cx="260" cy="172" r="30" fill="url(#glow-c)" />
+
+        <!-- Connection lines (drawn before nodes) -->
+        <g id="net-lines" stroke="rgba(42,127,255,0.2)" stroke-width="1" fill="none">
+          <!-- lines generated by JS -->
+        </g>
+
+        <!-- Nodes generated by JS -->
+        <g id="net-nodes"></g>
+      </svg>
+    </div>
+
+    <div class="panel events-panel">
+      <div class="panel-title">协同事件流 <span id="event-count" style="margin-left:auto;color:var(--text3);font-size:9px;font-weight:400;"></span></div>
+      <div class="event-list" id="event-list">
+        <div style="color:var(--text3);font-size:11px;padding:8px 0;">等待事件...</div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ─── 右列：状态 + 优先级 + Top5 + 告警 ─── -->
+  <div class="right-col">
+
+    <div class="panel">
+      <div class="panel-title">智能体状态总览</div>
+      <div class="donut-wrap">
+        <canvas class="donut-canvas" id="donut-agents"></canvas>
+        <div class="donut-legend" id="legend-agents">
+          <div class="legend-item"><div class="legend-dot" style="background:var(--green)"></div>执行中<span class="legend-count" id="la-running">0</span></div>
+          <div class="legend-item"><div class="legend-dot" style="background:var(--accent2)"></div>空闲中<span class="legend-count" id="la-idle">0</span></div>
+          <div class="legend-item"><div class="legend-dot" style="background:var(--yellow)"></div>高线<span class="legend-count" id="la-busy">0</span></div>
+          <div class="legend-item"><div class="legend-dot" style="background:var(--red)"></div>告警<span class="legend-count" id="la-offline">0</span></div>
+        </div>
+      </div>
+      <div style="text-align:center;margin-top:6px;font-size:10px;color:var(--text3);">总数 <span id="donut-total" style="color:var(--text1);font-weight:700;">0</span></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-title">任务优先级分布</div>
+      <div class="donut-wrap">
+        <canvas class="donut-canvas" id="donut-tasks"></canvas>
+        <div class="donut-legend">
+          <div class="legend-item"><div class="legend-dot" style="background:var(--red)"></div>P0 紧急<span class="legend-count" id="lt-p0">0</span></div>
+          <div class="legend-item"><div class="legend-dot" style="background:var(--yellow)"></div>P1 高<span class="legend-count" id="lt-p1">0</span></div>
+          <div class="legend-item"><div class="legend-dot" style="background:var(--accent)"></div>P2 中<span class="legend-count" id="lt-p2">0</span></div>
+          <div class="legend-item"><div class="legend-dot" style="background:var(--text3)"></div>P3 低<span class="legend-count" id="lt-p3">0</span></div>
+        </div>
+      </div>
+      <div style="text-align:center;margin-top:6px;font-size:10px;color:var(--text3);">总数 <span id="task-total" style="color:var(--text1);font-weight:700;">0</span></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-title">Top 5 智能体（按任务完成数）</div>
+      <div class="top5-list" id="top5-list">
+        <div style="color:var(--text3);font-size:10px;">暂无数据</div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-title">告警与通知 <a href="#" style="margin-left:auto;font-size:9px;color:var(--accent2);font-weight:400;text-decoration:none;">查看更多 ›</a></div>
+      <div class="alert-list" id="alert-list">
+        <div style="color:var(--text3);font-size:10px;">系统正常运行中...</div>
+      </div>
+    </div>
+
+  </div>
+
+</main>
+
+<script>
+// ─── 配置 ────────────────────────────────────────────────
+const API   = 'http://localhost:8000';
+const WS_URL = 'ws://localhost:8000/ws';
+
+// ─── 状态 ────────────────────────────────────────────────
+let ws = null;
+let lastData = null;
+
+// 趋势历史数据
+const trendHistory = {
+  labels: [],
+  created: [],
+  running: [],
+  completed: [],
+};
+const MAX_TREND = 20;
+
+// ─── 工具 ────────────────────────────────────────────────
+function fmt(n) {
+  if (n >= 1e6) return (n/1e6).toFixed(1) + 'M';
+  if (n >= 1e3) return (n/1e3).toFixed(1) + 'K';
+  return String(n);
+}
+
+// ─── 时钟 ────────────────────────────────────────────────
+function updateClock() {
+  const now = new Date();
+  document.getElementById('clock').textContent =
+    now.toTimeString().slice(0,8);
+  document.getElementById('clock-date').textContent =
+    `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')} ${['周日','周一','周二','周三','周四','周五','周六'][now.getDay()]}`;
+}
+setInterval(updateClock, 1000);
+updateClock();
+
+// ─── 趋势图 ──────────────────────────────────────────────
+const trendCtx = document.getElementById('trend-chart').getContext('2d');
+const trendChart = new Chart(trendCtx, {
+  type: 'line',
+  data: {
+    labels: [],
+    datasets: [
+      { label: '创建', data: [], borderColor: '#2a7fff', borderWidth: 1.5, pointRadius: 0, fill: true, backgroundColor: 'rgba(42,127,255,0.06)', tension: 0.4 },
+      { label: '进行中', data: [], borderColor: '#9b6dff', borderWidth: 1.5, pointRadius: 0, fill: false, tension: 0.4 },
+      { label: '已完成', data: [], borderColor: '#00e5a0', borderWidth: 1.5, pointRadius: 0, fill: false, tension: 0.4 },
+    ]
+  },
+  options: {
+    responsive: true, maintainAspectRatio: false,
+    plugins: { legend: { display: false } },
+    scales: {
+      x: { display: false },
+      y: { display: false, beginAtZero: true },
+    },
+    animation: { duration: 0 },
+  }
+});
+
+// ─── 雷达图 ──────────────────────────────────────────────
+const radarCtx = document.getElementById('radar-chart').getContext('2d');
+const radarChart = new Chart(radarCtx, {
+  type: 'radar',
+  data: {
+    labels: ['感知理解', '逻辑推理', '知识问答', '工具调用', '代码执行', '数据分析'],
+    datasets: [{
+      label: '能力',
+      data: [85, 92, 78, 88, 80, 90],
+      borderColor: 'rgba(155,109,255,0.8)',
+      backgroundColor: 'rgba(155,109,255,0.15)',
+      pointBackgroundColor: '#9b6dff',
+      pointRadius: 3,
+      borderWidth: 1.5,
+    }]
+  },
+  options: {
+    responsive: true, maintainAspectRatio: false,
+    plugins: { legend: { display: false } },
+    scales: {
+      r: {
+        beginAtZero: true, max: 100,
+        ticks: { display: false, stepSize: 25 },
+        grid: { color: 'rgba(40,130,255,0.12)' },
+        angleLines: { color: 'rgba(40,130,255,0.12)' },
+        pointLabels: { color: '#7ca3d8', font: { size: 9 } },
+      }
+    },
+    animation: { duration: 400 },
+  }
+});
+
+// ─── 仪表盘 ──────────────────────────────────────────────
+function makeGauge(canvasId, color) {
+  const ctx = document.getElementById(canvasId).getContext('2d');
+  return new Chart(ctx, {
+    type: 'doughnut',
+    data: {
+      datasets: [{
+        data: [0, 100],
+        backgroundColor: [color, 'rgba(10,20,60,0.5)'],
+        borderWidth: 0,
+        circumference: 270,
+        rotation: 225,
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      cutout: '72%',
+      plugins: { legend: { display: false }, tooltip: { enabled: false } },
+      animation: { duration: 400 },
+    }
+  });
+}
+const gCpu = makeGauge('g-cpu', '#2a7fff');
+const gMem = makeGauge('g-mem', '#9b6dff');
+const gGpu = makeGauge('g-gpu', '#00d4ff');
+const gSto = makeGauge('g-sto', '#00e5a0');
+
+function updateGauge(chart, valEl, val) {
+  chart.data.datasets[0].data = [val, 100 - val];
+  chart.update('none');
+  document.getElementById(valEl).textContent = val + '%';
+}
+
+// ─── 甜甜圈图 ────────────────────────────────────────────
+function makeDonut(canvasId, colors) {
+  const ctx = document.getElementById(canvasId).getContext('2d');
+  return new Chart(ctx, {
+    type: 'doughnut',
+    data: {
+      datasets: [{
+        data: [1, 1, 1, 1],
+        backgroundColor: colors,
+        borderWidth: 0,
+        hoverOffset: 3,
+      }]
+    },
+    options: {
+      responsive: false, maintainAspectRatio: false,
+      cutout: '68%',
+      plugins: { legend: { display: false }, tooltip: { enabled: false } },
+      animation: { duration: 400 },
+    }
+  });
+}
+const donutAgents = makeDonut('donut-agents', ['#00e5a0','#00d4ff','#f0c040','#ff4d6a']);
+const donutTasks  = makeDonut('donut-tasks',  ['#ff4d6a','#f0c040','#2a7fff','#3a6ca8']);
+
+// ─── 协同网络 SVG ─────────────────────────────────────────
+const NODE_DEFS = [
+  { id: 'orchestrator', label: '调度中枢',   sub: 'Orchestrator', x: 260, y: 172, r: 28, color: '#2a7fff', glow: true, center: true },
+  { id: 'planner',   label: '规划智能体', sub: 'Planner Agent',   x: 260, y: 52,  r: 20, color: '#9b6dff' },
+  { id: 'analyzer',  label: '分析智能体', sub: 'Analyst Agent',   x: 400, y: 110, r: 20, color: '#00e5a0' },
+  { id: 'executor',  label: '执行智能体', sub: 'Executor Agent',  x: 420, y: 220, r: 20, color: '#f0c040' },
+  { id: 'evaluator', label: '评估智能体', sub: 'Evaluator Agent', x: 320, y: 300, r: 20, color: '#00d4ff' },
+  { id: 'knowledge', label: '知识智能体', sub: 'Knowledge Agent', x: 190, y: 300, r: 20, color: '#2a7fff' },
+  { id: 'chat',      label: '对话智能体', sub: 'Chat Agent',      x: 100, y: 220, r: 20, color: '#ff9f60' },
+  { id: 'coder',     label: '代码智能体', sub: 'Coder Agent',     x: 80,  y: 110, r: 20, color: '#f0c040' },
+  { id: 'retriever', label: '检索智能体', sub: 'Retriever Agent', x: 150, y: 50,  r: 20, color: '#00e5a0' },
+];
+
+function renderNetwork(agents) {
+  const linesEl = document.getElementById('net-lines');
+  const nodesEl = document.getElementById('net-nodes');
+  linesEl.innerHTML = '';
+  nodesEl.innerHTML = '';
+
+  const center = NODE_DEFS[0];
+
+  // Draw lines from center to each node
+  NODE_DEFS.slice(1).forEach(n => {
+    const line = document.createElementNS('http://www.w3.org/2000/svg','line');
+    line.setAttribute('x1', center.x); line.setAttribute('y1', center.y);
+    line.setAttribute('x2', n.x);      line.setAttribute('y2', n.y);
+    line.setAttribute('stroke', 'rgba(42,127,255,0.15)');
+    line.setAttribute('stroke-width', '1');
+    linesEl.appendChild(line);
+  });
+
+  // Build agent status map by role
+  const roleStatus = {};
+  agents.forEach(a => { roleStatus[a.role] = a.status; });
+
+  NODE_DEFS.forEach(nd => {
+    const status = roleStatus[nd.id] || (nd.center ? 'running' : 'idle');
+    const col = statusColor(status, nd.color);
+
+    const g = document.createElementNS('http://www.w3.org/2000/svg','g');
+    g.setAttribute('style','cursor:pointer');
+
+    // Outer ring (glow)
+    const ring = document.createElementNS('http://www.w3.org/2000/svg','circle');
+    ring.setAttribute('cx', nd.x); ring.setAttribute('cy', nd.y);
+    ring.setAttribute('r', nd.r + 6);
+    ring.setAttribute('fill', 'none');
+    ring.setAttribute('stroke', col);
+    ring.setAttribute('stroke-width', '0.8');
+    ring.setAttribute('opacity', '0.3');
+    if (status === 'running') {
+      ring.setAttribute('class', 'node-pulse');
+      ring.style.transformOrigin = `${nd.x}px ${nd.y}px`;
+    }
+    g.appendChild(ring);
+
+    // Main circle
+    const c = document.createElementNS('http://www.w3.org/2000/svg','circle');
+    c.setAttribute('cx', nd.x); c.setAttribute('cy', nd.y);
+    c.setAttribute('r', nd.r);
+    c.setAttribute('fill', `rgba(${hexToRgb(col)},0.15)`);
+    c.setAttribute('stroke', col);
+    c.setAttribute('stroke-width', nd.center ? '2' : '1.5');
+    if (nd.glow) c.setAttribute('filter','url(#glow)');
+    g.appendChild(c);
+
+    // Label
+    const t1 = document.createElementNS('http://www.w3.org/2000/svg','text');
+    t1.setAttribute('x', nd.x); t1.setAttribute('y', nd.center ? nd.y - 5 : nd.y);
+    t1.setAttribute('text-anchor','middle'); t1.setAttribute('dominant-baseline','central');
+    t1.setAttribute('fill', col);
+    t1.setAttribute('font-size', nd.center ? '11' : '9');
+    t1.setAttribute('font-weight', '600');
+    t1.setAttribute('font-family', 'PingFang SC, Microsoft YaHei, sans-serif');
+    t1.textContent = nd.label;
+    g.appendChild(t1);
+
+    const t2 = document.createElementNS('http://www.w3.org/2000/svg','text');
+    t2.setAttribute('x', nd.x); t2.setAttribute('y', nd.center ? nd.y + 9 : nd.y + 11);
+    t2.setAttribute('text-anchor','middle'); t2.setAttribute('dominant-baseline','central');
+    t2.setAttribute('fill', 'rgba(120,165,220,0.7)');
+    t2.setAttribute('font-size', '7');
+    t2.setAttribute('font-family', 'PingFang SC, Microsoft YaHei, sans-serif');
+    t2.textContent = nd.sub;
+    g.appendChild(t2);
+
+    nodesEl.appendChild(g);
+  });
+}
+
+function statusColor(status, fallback) {
+  const map = { running: '#00e5a0', idle: '#00d4ff', busy: '#f0c040', offline: '#ff4d6a' };
+  return map[status] || fallback || '#2a7fff';
+}
+
+function hexToRgb(hex) {
+  const r = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+  return r ? `${parseInt(r[1],16)},${parseInt(r[2],16)},${parseInt(r[3],16)}` : '42,127,255';
+}
+
+// Initial render with no agents
+renderNetwork([]);
+
+// ─── 数据更新 ─────────────────────────────────────────────
+function applyData(data) {
+  lastData = data;
+  const s = data;
+
+  // 概览
+  animNum('stat-agents', s.agent_count || 0);
+  animNum('stat-tasks',  s.task_count  || 0);
+  animNum('stat-interactions', s.interactions || 0);
+  document.getElementById('stat-data').textContent = (s.data_processed || 0) + ' TB';
+
+  const as = s.agent_statuses || {};
+  const ts = s.task_statuses  || {};
+  document.getElementById('stat-agents-sub').textContent =
+    `在线 ${(as.running||0)+(as.idle||0)} · 高线 ${as.busy||0}`;
+  document.getElementById('stat-tasks-sub').textContent =
+    `进行中 ${ts.running||0} · 已完成 ${ts.completed||0}`;
+
+  // 趋势
+  const now = new Date().toLocaleTimeString('zh',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  if (trendHistory.labels.length > MAX_TREND) {
+    trendHistory.labels.shift();
+    trendHistory.created.shift();
+    trendHistory.running.shift();
+    trendHistory.completed.shift();
+  }
+  trendHistory.labels.push(now);
+  trendHistory.created.push(s.task_count || 0);
+  trendHistory.running.push(ts.running || 0);
+  trendHistory.completed.push(ts.completed || 0);
+  trendChart.data.labels = [...trendHistory.labels];
+  trendChart.data.datasets[0].data = [...trendHistory.created];
+  trendChart.data.datasets[1].data = [...trendHistory.running];
+  trendChart.data.datasets[2].data = [...trendHistory.completed];
+  trendChart.update('none');
+
+  // 仪表盘
+  const r = s.resources || {};
+  updateGauge(gCpu, 'gv-cpu', r.cpu || 0);
+  updateGauge(gMem, 'gv-mem', r.memory || 0);
+  updateGauge(gGpu, 'gv-gpu', r.gpu || 0);
+  updateGauge(gSto, 'gv-sto', r.storage || 0);
+
+  // 智能体状态甜甜圈
+  const aData = [as.running||0, as.idle||0, as.busy||0, as.offline||0];
+  donutAgents.data.datasets[0].data = aData.every(v=>v===0) ? [1,1,1,1] : aData;
+  donutAgents.update('none');
+  document.getElementById('la-running').textContent = as.running||0;
+  document.getElementById('la-idle').textContent    = as.idle||0;
+  document.getElementById('la-busy').textContent    = as.busy||0;
+  document.getElementById('la-offline').textContent = as.offline||0;
+  document.getElementById('donut-total').textContent = s.agent_count||0;
+
+  // 任务优先级
+  const tp = s.task_priorities || {};
+  const tpData = [tp.P0||0, tp.P1||0, tp.P2||0, tp.P3||0];
+  donutTasks.data.datasets[0].data = tpData.every(v=>v===0) ? [1,1,1,1] : tpData;
+  donutTasks.update('none');
+  document.getElementById('lt-p0').textContent = tp.P0||0;
+  document.getElementById('lt-p1').textContent = tp.P1||0;
+  document.getElementById('lt-p2').textContent = tp.P2||0;
+  document.getElementById('lt-p3').textContent = tp.P3||0;
+  document.getElementById('task-total').textContent = s.task_count||0;
+
+  // Top5
+  renderTop5(s.top5_agents || []);
+
+  // 网络
+  renderNetwork(s.agents || []);
+
+  // 事件流
+  if (s.events && s.events.length) {
+    renderEvents(s.events.slice(-10).reverse());
+  }
+}
+
+function animNum(id, val) {
+  const el = document.getElementById(id);
+  if (el && el.textContent !== String(fmt(val))) {
+    el.textContent = fmt(val);
+    el.classList.remove('count-anim');
+    void el.offsetWidth;
+    el.classList.add('count-anim');
+  }
+}
+
+function renderTop5(agents) {
+  const el = document.getElementById('top5-list');
+  if (!agents.length) { el.innerHTML = '<div style="color:var(--text3);font-size:10px;">暂无智能体</div>'; return; }
+  const max = Math.max(...agents.map(a=>a.tasks_completed), 1);
+  el.innerHTML = agents.map((a,i) => `
+    <div class="top5-item">
+      <div class="top5-rank ${i===0?'gold':''}">${i+1}</div>
+      <div class="top5-name">${a.name}</div>
+      <div class="top5-bar-wrap"><div class="top5-bar" style="width:${Math.round(a.tasks_completed/max*100)}%"></div></div>
+      <div class="top5-count">${a.tasks_completed}</div>
+    </div>
+  `).join('');
+}
+
+function renderEvents(events) {
+  const el = document.getElementById('event-list');
+  document.getElementById('event-count').textContent = `共 ${events.length} 条`;
+  if (!events.length) return;
+  el.innerHTML = events.map(e => `
+    <div class="event-item ${e.level||''}">
+      <span class="event-ts">${e.timestamp}</span>
+      <span>
+        <span class="event-from">${e.from_name||e.from_agent}</span>
+        ${e.to_name ? `<span class="event-arrow"> → </span><span class="event-to">${e.to_name}</span>` : ''}
+        <span style="color:var(--text2);margin-left:4px;">${e.action}</span>
+      </span>
+      <span class="event-result">${e.result_summary||''}</span>
+    </div>
+  `).join('');
+}
+
+// 系统告警（静态示例 + 动态注入）
+const ALERTS = [
+  { level:'danger', icon:'⚠', title:'执行智能体 响应超时', sub:'任务 ID: T-8f32...', time:'刚刚' },
+  { level:'warning', icon:'⚡', title:'知识智能体 同步失败', sub:'知识库: 产品文档库', time:'1分钟前' },
+  { level:'info', icon:'ℹ', title:'系统将在 30 分钟后维护', sub:'维护时间: 21:00-22:00', time:'3分钟前' },
+];
+document.getElementById('alert-list').innerHTML = ALERTS.map(a => `
+  <div class="alert-item ${a.level}">
+    <div class="alert-icon">${a.icon}</div>
+    <div class="alert-body">
+      <div class="alert-title">${a.title}</div>
+      <div class="alert-sub">${a.sub}</div>
+    </div>
+    <div class="alert-time">${a.time}</div>
+  </div>
+`).join('');
+
+// ─── WebSocket 连接 ───────────────────────────────────────
+function connectWS() {
+  ws = new WebSocket(WS_URL);
+  const dot = document.getElementById('ws-dot');
+
+  ws.onopen = () => { dot.classList.add('connected'); };
+  ws.onclose = () => {
+    dot.classList.remove('connected');
+    setTimeout(connectWS, 3000);
+  };
+  ws.onerror = () => { ws.close(); };
+
+  ws.onmessage = (e) => {
+    const msg = JSON.parse(e.data);
+    if (msg.data) applyData(msg.data);
+  };
+
+  // keepalive
+  setInterval(() => {
+    if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({type:'ping'}));
+  }, 25000);
+}
+
+// ─── 降级：轮询 REST ──────────────────────────────────────
+async function pollStats() {
+  try {
+    const r = await fetch(`${API}/api/stats`);
+    if (r.ok) applyData(await r.json());
+  } catch (_) {}
+}
+
+// 尝试 WebSocket，同时每10秒 REST 兜底
+connectWS();
+setInterval(pollStats, 10000);
+pollStats();  // 立即拉一次
+
+// ─── 导航按钮 ─────────────────────────────────────────────
+document.querySelectorAll('.nav-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+  });
+});
+</script>
+</body>
+</html>
