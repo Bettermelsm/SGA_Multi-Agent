@@ -63,7 +63,7 @@ fi
 
 # ── 5. Open dashboard ────────────────────────────────────
 echo "▸ 打开看板..."
-DASHBOARD="$PLATFORM_DIR/frontend/index.html"
+DASHBOARD="http://localhost:$PORT"
 if command -v open &>/dev/null; then
   open "$DASHBOARD"
 elif command -v xdg-open &>/dev/null; then
@@ -75,7 +75,7 @@ echo ""
 echo "╔══════════════════════════════════════════════╗"
 echo "║  🚀 平台启动成功！                             ║"
 echo "║                                              ║"
-echo "║  看板:    file://$(echo $DASHBOARD | sed 's|/home/[^/]*/||')"
+echo "║  看板:    http://localhost:$PORT              ║"
 echo "║  API:     http://localhost:$PORT/docs          ║"
 echo "║  WS:      ws://localhost:$PORT/ws              ║"
 echo "║  DB:      $BACKEND_DIR/platform.db           ║"

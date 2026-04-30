@@ -10,7 +10,6 @@ import asyncio
 import json
 import logging
 import os
-import random
 import sqlite3
 import time
 import uuid
@@ -24,7 +23,8 @@ import httpx
 import psutil
 from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 # ─── Logging ─────────────────────────────────────────────
@@ -37,10 +37,24 @@ HERMES_MODEL      = os.getenv("HERMES_MODEL",  "hermes3")
 HEARTBEAT_TIMEOUT = int(os.getenv("HB_TIMEOUT", "60"))
 DB_PATH           = Path(os.getenv("DB_PATH", "./platform.db"))
 BROADCAST_INTERVAL = 3   # seconds
+OLLAMA_AUTO_REGISTER = os.getenv("OLLAMA_AUTO_REGISTER", "true").lower() == "true"
+OLLAMA_MODEL_PATTERN = os.getenv("OLLAMA_MODEL_PATTERN", "")
+OLLAMA_SYNC_INTERVAL = int(os.getenv("OLLAMA_SYNC_INTERVAL", "120"))
 
 # ─── App ─────────────────────────────────────────────────
 app = FastAPI(title="Multi-Agent Platform", version="2.0.0", docs_url="/docs")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+
+# ─── Serve frontend ──────────────────────────────────────
+FRONTEND_DIR = Path(os.getenv("FRONTEND_DIR", "."))
+
+
+@app.get("/", include_in_schema=False)
+async def serve_dashboard():
+    return FileResponse(FRONTEND_DIR / "index.html")
+
+
+app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR)), name="static")
 
 
 # ══════════════════════════════════════════════════════════
@@ -178,13 +192,9 @@ class HotState:
         self.agent_metrics:  dict[str, dict] = {}
         self.agent_task:     dict[str, str]  = {}   # agent_id -> current task_id
         self.events:         deque           = deque(maxlen=300)
-        self.interactions:   int             = 3682
-        self.data_mb:        float           = 2340.0
+        self.interactions:   int             = 0
+        self.data_mb:        float           = 0.0
         self.message_queues: dict[str, list] = {}   # agent_id -> pending messages
-
-    def bump(self):
-        self.interactions += random.randint(0, 4)
-        self.data_mb      += random.uniform(0, 8)
 
 
 hot = HotState()
@@ -270,6 +280,41 @@ def add_event(from_agent: str, to_agent: Optional[str], action: str,
     except Exception as e:
         log.warning(f"Event persist error: {e}")
 
+ROLE_CAPS = {
+    "planner":   {"perception": 80, "reasoning": 90, "qa": 60,  "tools": 50,  "code": 30,  "data": 70},
+    "coder":     {"perception": 50, "reasoning": 70, "qa": 60,  "tools": 85,  "code": 95,  "data": 50},
+    "retriever": {"perception": 85, "reasoning": 60, "qa": 90,  "tools": 70,  "code": 30,  "data": 65},
+    "analyzer":  {"perception": 70, "reasoning": 85, "qa": 70,  "tools": 60,  "code": 40,  "data": 95},
+    "evaluator": {"perception": 75, "reasoning": 80, "qa": 75,  "tools": 55,  "code": 60,  "data": 70},
+    "chat":      {"perception": 90, "reasoning": 65, "qa": 85,  "tools": 40,  "code": 25,  "data": 40},
+    "custom":    {"perception": 60, "reasoning": 60, "qa": 60,  "tools": 60,  "code": 60,  "data": 60},
+}
+
+
+def _compute_capability_scores(agents: list) -> list:
+    dims = ["perception", "reasoning", "qa", "tools", "code", "data"]
+    if not agents:
+        return [0] * 6
+    totals = {d: 0 for d in dims}
+    for a in agents:
+        base = ROLE_CAPS.get(a["role"], ROLE_CAPS["custom"])
+        for d in dims:
+            totals[d] += base[d]
+    return [round(totals[d] / len(agents)) for d in dims]
+
+
+def _get_gpu_utilization() -> int:
+    try:
+        import pynvml
+        pynvml.nvmlInit()
+        handle = pynvml.nvmlDeviceGetHandleByIndex(0)
+        util = pynvml.nvmlDeviceGetUtilizationRates(handle)
+        gpu = util.gpu
+        pynvml.nvmlShutdown()
+        return gpu
+    except Exception:
+        return -1
+
 
 def get_real_resources() -> dict:
     """Return real system metrics via psutil."""
@@ -277,7 +322,7 @@ def get_real_resources() -> dict:
         cpu  = round(psutil.cpu_percent(interval=None), 1)
         mem  = psutil.virtual_memory()
         disk = psutil.disk_usage("/")
-        gpu  = random.randint(20, 75)  # GPU needs nvidia-ml-py; fake for portability
+        gpu  = _get_gpu_utilization()
         return {
             "cpu":          cpu,
             "memory":       round(mem.percent, 1),
@@ -289,11 +334,10 @@ def get_real_resources() -> dict:
             "storage_total":round(disk.total / 1e9, 1),
         }
     except Exception:
-        return {"cpu": 42, "memory": 68, "gpu": 55, "storage": 51}
+        return {"cpu": 42, "memory": 68, "gpu": -1, "storage": 51}
 
 
 def build_stats() -> dict:
-    hot.bump()
     # --- agents ---
     rows = db().execute("SELECT * FROM agents").fetchall()
     agents = []
@@ -347,6 +391,7 @@ def build_stats() -> dict:
         "interactions":     hot.interactions,
         "data_processed":   round(hot.data_mb / 1000, 2),
         "ws_clients":       len(ws_mgr.clients),
+        "capability_scores": _compute_capability_scores(agents),
     }
 
 
@@ -377,6 +422,7 @@ class TaskResultReq(BaseModel):
 class ChatReq(BaseModel):
     prompt:   str
     agent_id: Optional[str] = None
+    model:    Optional[str] = None
     system:   str  = "You are a helpful assistant."
     stream:   bool = False
     history:  list[dict] = []   # multi-turn: [{role,content}, ...]
@@ -408,6 +454,71 @@ class MessageReq(BaseModel):
 #  Startup / background tasks
 # ══════════════════════════════════════════════════════════
 @app.on_event("startup")
+async def _sync_ollama_models():
+    """Discover Ollama models and register/deregister them as platform agents."""
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.get(f"{OLLAMA_BASE}/api/tags")
+            resp.raise_for_status()
+            ollama_models = resp.json().get("models", [])
+    except Exception as e:
+        log.info(f"Ollama sync: cannot reach Ollama ({e})")
+        return
+
+    existing = db().execute(
+        "SELECT agent_id, name FROM agents WHERE description LIKE '%[ollama-auto]%'"
+    ).fetchall()
+    existing_map = {r["name"]: r["agent_id"] for r in existing}
+
+    model_names = []
+    for m in ollama_models:
+        name = m.get("name", "")
+        if OLLAMA_MODEL_PATTERN and OLLAMA_MODEL_PATTERN not in name:
+            continue
+        model_names.append(name)
+
+    for name in model_names:
+        if name in existing_map:
+            continue
+        agent_id = f"ollama-{name.replace(':','_')}"[:16]
+        caps = [f"model:{name}", "LLM", "对话"]
+        description = f"Ollama model: {name} [ollama-auto]"
+        try:
+            db().execute(
+                """INSERT INTO agents (agent_id,name,role,capabilities,description,status,
+                   tasks_completed,last_heartbeat,metrics,registered_at)
+                   VALUES (?,?,?,?,?,'idle',0,?,?,?)""",
+                (agent_id, name, "chat", json.dumps(caps), description, now_ts(), "{}", now_iso())
+            )
+            db().commit()
+            hot.agent_status[agent_id] = "idle"
+            hot.agent_hb[agent_id] = now_ts()
+            hot.interactions += 1
+            add_event("system", agent_id, f"Ollama model auto-registered: {name}", "info")
+            log.info(f"Auto-registered Ollama model: {name} as {agent_id}")
+        except Exception as e:
+            log.warning(f"Failed to auto-register model {name}: {e}")
+
+    for name, aid in existing_map.items():
+        if name not in model_names:
+            db().execute("DELETE FROM agents WHERE agent_id=?", (aid,))
+            db().commit()
+            hot.agent_status.pop(aid, None)
+            hot.agent_hb.pop(aid, None)
+            add_event("system", aid, f"Ollama model removed: {name}", "warning")
+            log.info(f"Auto-deregistered removed Ollama model: {name}")
+
+    await ws_mgr.broadcast({"type": "ollama_sync", "data": build_stats()})
+
+
+async def _ollama_sync_loop():
+    """Periodically sync Ollama models to agent registry."""
+    while True:
+        await asyncio.sleep(OLLAMA_SYNC_INTERVAL)
+        await _sync_ollama_models()
+
+
+@app.on_event("startup")
 async def startup():
     init_db()
     # restore hot state from DB
@@ -417,6 +528,9 @@ async def startup():
     log.info(f"Platform v2 started. DB={DB_PATH}, {len(hot.agent_status)} agents restored.")
     asyncio.create_task(_broadcast_loop())
     asyncio.create_task(_alert_check_loop())
+    if OLLAMA_AUTO_REGISTER:
+        await _sync_ollama_models()
+        asyncio.create_task(_ollama_sync_loop())
 
 
 async def _broadcast_loop():
@@ -484,6 +598,7 @@ async def register_agent(req: AgentRegisterReq):
     hot.agent_status[agent_id] = "idle"
     hot.agent_hb[agent_id]     = now_ts()
     add_event("system", agent_id, f"智能体 {req.name} 注册上线", "info")
+    hot.interactions += 1
     stats = build_stats()
     await ws_mgr.broadcast({"type": "agent_joined", "agent_id": agent_id, "data": stats})
     log.info(f"Agent registered: {req.name} ({agent_id})")
@@ -576,6 +691,7 @@ async def deregister_agent(agent_id: str):
     db().execute("UPDATE agents SET status='offline' WHERE agent_id=?", (agent_id,))
     db().commit()
     add_event("system", agent_id, f"智能体 {row['name']} 下线", "info")
+    hot.interactions += 1
     await ws_mgr.broadcast({"type": "agent_left", "data": build_stats()})
     return {"ok": True}
 
@@ -596,6 +712,7 @@ async def create_task(req: TaskCreateReq):
     )
     db().commit()
     add_event("system", req.assigned_to, f"创建任务: {req.title}", "info", task_id=task_id)
+    hot.interactions += 1
     if req.assigned_to and hot.agent_status.get(req.assigned_to) not in (None, "offline"):
         hot.agent_status[req.assigned_to] = "running"
         hot.agent_task[req.assigned_to]   = task_id
@@ -623,6 +740,8 @@ async def complete_task(task_id: str, agent_id: str, req: TaskResultReq):
     hot.agent_status[agent_id] = "idle"
     hot.agent_task.pop(agent_id, None)
     add_event(agent_id, None, "完成任务", "success", task_id=task_id, result_summary=req.summary[:80])
+    hot.interactions += 1
+    hot.data_mb += len(json.dumps(req.data)) / 1e6
     await ws_mgr.broadcast({"type": "task_completed", "task_id": task_id, "data": build_stats()})
     return {"ok": True}
 
@@ -862,6 +981,7 @@ async def send_message(agent_id: str, req: MessageReq):
     )
     db().commit()
     add_event(agent_id, req.to_agent, f"发送消息: {req.content[:40]}", "info")
+    hot.interactions += 1
     # Push to target's in-memory queue for instant delivery
     hot.message_queues.setdefault(req.to_agent, []).append({
         "msg_id":     msg_id,
@@ -905,16 +1025,26 @@ async def chat(req: ChatReq):
     messages.extend(req.history)
     messages.append({"role": "user", "content": req.prompt})
 
+    target_model = req.model or HERMES_MODEL
+    if req.agent_id and not req.model:
+        row = db().execute("SELECT capabilities FROM agents WHERE agent_id=?", (req.agent_id,)).fetchone()
+        if row:
+            caps = json.loads(row["capabilities"] or "[]")
+            for cap in caps:
+                if cap.startswith("model:"):
+                    target_model = cap[6:]
+                    break
+
     if req.stream:
         return StreamingResponse(
-            _stream_chat(messages, req.agent_id),
+            _stream_chat(messages, req.agent_id, target_model),
             media_type="text/event-stream"
         )
 
     try:
         async with httpx.AsyncClient(timeout=90) as client:
             resp = await client.post(f"{OLLAMA_BASE}/api/chat", json={
-                "model": HERMES_MODEL, "messages": messages, "stream": False,
+                "model": target_model, "messages": messages, "stream": False,
             })
             resp.raise_for_status()
             content = resp.json()["message"]["content"]
@@ -925,15 +1055,18 @@ async def chat(req: ChatReq):
 
     if req.agent_id:
         add_event(req.agent_id, None, f"LLM 推理完成 ({len(content)} chars)", "success")
+        hot.interactions += 1
+        hot.data_mb += len(content) / 1e6
         await ws_mgr.broadcast({"type": "llm_response", "data": build_stats()})
-    return {"response": content, "model": HERMES_MODEL, "turns": len(req.history) + 1}
+    return {"response": content, "model": target_model, "turns": len(req.history) + 1}
 
 
-async def _stream_chat(messages: list, agent_id: Optional[str]) -> AsyncIterator[str]:
+async def _stream_chat(messages: list, agent_id: Optional[str], model: Optional[str] = None) -> AsyncIterator[str]:
+    target_model = model or HERMES_MODEL
     try:
         async with httpx.AsyncClient(timeout=120) as client:
             async with client.stream("POST", f"{OLLAMA_BASE}/api/chat", json={
-                "model": HERMES_MODEL, "messages": messages, "stream": True,
+                "model": target_model, "messages": messages, "stream": True,
             }) as resp:
                 full = ""
                 async for line in resp.aiter_lines():

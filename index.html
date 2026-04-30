@@ -645,7 +645,8 @@ nav{display:flex;gap:2px;}
 
 <script>
 'use strict';
-const API='http://localhost:8000', WS_URL='ws://localhost:8000/ws';
+const API=window.location.protocol==='file:'?'http://localhost:8000':window.location.origin;
+const WS_URL=window.location.protocol==='file:'?'ws://localhost:8000/ws':((window.location.protocol==='https:'?'wss:':'ws:')+'//'+window.location.host+'/ws');
 
 // ══ i18n ══════════════════════════════════════════════
 const STRINGS={
@@ -913,7 +914,7 @@ function applyLang(){
   _tid('al-sl-warn',       A.warning);
   _tid('al-sl-info',       A.info);
   // rule cond options - re-translate
-  const _tid('opt-rc-cpu',   A.condCpuGt||'CPU >');
+  _tid('opt-rc-cpu',   A.condCpuGt||'CPU >');
   _tid('opt-rc-mem',   A.condMemGt||'Mem >');
   _tid('opt-rc-aoff',  A.condAgentOff||'Agent offline');
   _tid('opt-rc-tfail', A.condTaskFail||'Task failed');
@@ -971,7 +972,7 @@ const trendChart=new Chart(document.getElementById('trend-chart').getContext('2d
 
 const radarChart=new Chart(document.getElementById('radar-chart').getContext('2d'),{
   type:'radar',
-  data:{labels:s().radar,datasets:[{label:'',data:[85,92,78,88,80,90],borderColor:'rgba(155,109,255,.8)',backgroundColor:'rgba(155,109,255,.15)',pointBackgroundColor:'#9b6dff',pointRadius:3,borderWidth:1.5}]},
+  data:{labels:s().radar,datasets:[{label:'',data:[0,0,0,0,0,0],borderColor:'rgba(155,109,255,.8)',backgroundColor:'rgba(155,109,255,.15)',pointBackgroundColor:'#9b6dff',pointRadius:3,borderWidth:1.5}]},
   options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
     scales:{r:{beginAtZero:true,max:100,ticks:{display:false},grid:{color:'rgba(40,130,255,.12)'},angleLines:{color:'rgba(40,130,255,.12)'},pointLabels:{color:'#7ca3d8',font:{size:9}}}},animation:{duration:400}}
 });
@@ -997,47 +998,50 @@ const donutAgents=mkDonut('donut-agents',['#00e5a0','#00d4ff','#f0c040','#ff4d6a
 const donutTasks =mkDonut('donut-tasks', ['#ff4d6a','#f0c040','#2a7fff','#3a6ca8']);
 
 // ══ Network SVG ═══════════════════════════════════════
-const NODES=[
-  {id:'orchestrator',zh:'调度中枢',en:'Orchestrator',sub:'Orchestrator',x:260,y:172,r:28,color:'#2a7fff',glow:true,center:true},
-  {id:'planner',  zh:'规划智能体',en:'Planner',  sub:'Planner Agent',  x:260,y:52, r:20,color:'#9b6dff'},
-  {id:'analyzer', zh:'分析智能体',en:'Analyst',  sub:'Analyst Agent',  x:400,y:110,r:20,color:'#00e5a0'},
-  {id:'executor', zh:'执行智能体',en:'Executor', sub:'Executor Agent', x:420,y:220,r:20,color:'#f0c040'},
-  {id:'evaluator',zh:'评估智能体',en:'Evaluator',sub:'Evaluator Agent',x:320,y:300,r:20,color:'#00d4ff'},
-  {id:'knowledge',zh:'知识智能体',en:'Knowledge',sub:'Knowledge Agent', x:190,y:300,r:20,color:'#2a7fff'},
-  {id:'chat',     zh:'对话智能体',en:'Chat',     sub:'Chat Agent',     x:100,y:220,r:20,color:'#ff9f60'},
-  {id:'coder',    zh:'代码智能体',en:'Coder',    sub:'Coder Agent',    x:80, y:110,r:20,color:'#f0c040'},
-  {id:'retriever',zh:'检索智能体',en:'Retriever',sub:'Retriever Agent',x:150,y:50, r:20,color:'#00e5a0'},
-];
+const CENTER={x:260,y:172,r:28,color:'#2a7fff'};
+const ROLE_COLORS={planner:'#9b6dff',coder:'#f0c040',analyzer:'#00e5a0',retriever:'#00e5a0',evaluator:'#00d4ff',chat:'#ff9f60'};
 const STATUS_COLOR={running:'#00e5a0',idle:'#00d4ff',busy:'#f0c040',offline:'#ff4d6a'};
 
 function renderNetwork(agents){
   const lines=document.getElementById('net-lines'),nodes=document.getElementById('net-nodes');
   lines.innerHTML='';nodes.innerHTML='';
-  const cx=NODES[0];
-  NODES.slice(1).forEach(n=>{
-    const l=document.createElementNS('http://www.w3.org/2000/svg','line');
-    l.setAttribute('x1',cx.x);l.setAttribute('y1',cx.y);l.setAttribute('x2',n.x);l.setAttribute('y2',n.y);
-    l.setAttribute('stroke','rgba(42,127,255,.15)');l.setAttribute('stroke-width','1');lines.appendChild(l);
-  });
-  const roleStatus={};agents.forEach(a=>roleStatus[a.role]=a.status);
-  NODES.forEach(nd=>{
-    const st=roleStatus[nd.id]||(nd.center?'running':'idle');
-    const col=STATUS_COLOR[st]||nd.color;
-    const label=lang==='zh'?nd.zh:nd.en;
-    const g=document.createElementNS('http://www.w3.org/2000/svg','g');
-    const ring=document.createElementNS('http://www.w3.org/2000/svg','circle');
-    ring.setAttribute('cx',nd.x);ring.setAttribute('cy',nd.y);ring.setAttribute('r',nd.r+6);
-    ring.setAttribute('fill','none');ring.setAttribute('stroke',col);ring.setAttribute('stroke-width','0.8');ring.setAttribute('opacity','0.3');
-    if(st==='running'){ring.setAttribute('class','npulse');ring.style.transformOrigin=`${nd.x}px ${nd.y}px`;}
-    g.appendChild(ring);
-    const c=document.createElementNS('http://www.w3.org/2000/svg','circle');
-    c.setAttribute('cx',nd.x);c.setAttribute('cy',nd.y);c.setAttribute('r',nd.r);
-    const rgb=hexRgb(col);c.setAttribute('fill',`rgba(${rgb},.15)`);c.setAttribute('stroke',col);c.setAttribute('stroke-width',nd.center?'2':'1.5');
-    if(nd.glow)c.setAttribute('filter','url(#glow)');g.appendChild(c);
-    g.appendChild(svgTxt(nd.x,nd.center?nd.y-5:nd.y,label,col,nd.center?'11':'9','600'));
-    g.appendChild(svgTxt(nd.x,nd.center?nd.y+9:nd.y+11,nd.sub,'rgba(120,165,220,.7)','7','400'));
-    nodes.appendChild(g);
-  });
+  const cx=CENTER.x,cy=CENTER.y;
+
+  if(agents.length){
+    const count=agents.length;
+    agents.forEach((a,i)=>{
+      const angle=(2*Math.PI*i/count)-Math.PI/2;
+      const ax=cx+130*Math.cos(angle),ay=cy+110*Math.sin(angle);
+      const l=document.createElementNS('http://www.w3.org/2000/svg','line');
+      l.setAttribute('x1',cx);l.setAttribute('y1',cy);l.setAttribute('x2',ax);l.setAttribute('y2',ay);
+      l.setAttribute('stroke','rgba(42,127,255,.15)');l.setAttribute('stroke-width','1');lines.appendChild(l);
+      const col=STATUS_COLOR[a.status]||ROLE_COLORS[a.role]||'#2a7fff';
+      const g=document.createElementNS('http://www.w3.org/2000/svg','g');
+      const ring=document.createElementNS('http://www.w3.org/2000/svg','circle');
+      ring.setAttribute('cx',ax);ring.setAttribute('cy',ay);ring.setAttribute('r','22');
+      ring.setAttribute('fill','none');ring.setAttribute('stroke',col);ring.setAttribute('stroke-width','0.8');ring.setAttribute('opacity','0.3');
+      if(a.status==='running'){ring.setAttribute('class','npulse');ring.style.transformOrigin=`${ax}px ${ay}px`;}
+      g.appendChild(ring);
+      const c=document.createElementNS('http://www.w3.org/2000/svg','circle');
+      c.setAttribute('cx',ax);c.setAttribute('cy',ay);c.setAttribute('r','16');
+      const rgb=hexRgb(col);c.setAttribute('fill',`rgba(${rgb},.15)`);c.setAttribute('stroke',col);c.setAttribute('stroke-width','1.5');
+      g.appendChild(c);
+      g.appendChild(svgTxt(ax,ay-2,a.name,col,'8','600'));
+      g.appendChild(svgTxt(ax,ay+9,a.role,'rgba(120,165,220,.7)','7','400'));
+      nodes.appendChild(g);
+    });
+  }
+
+  // Center orchestrator node
+  const cg=document.createElementNS('http://www.w3.org/2000/svg','g');
+  const cr=document.createElementNS('http://www.w3.org/2000/svg','circle');
+  cr.setAttribute('cx',cx);cr.setAttribute('cy',cy);cr.setAttribute('r',String(CENTER.r));
+  cr.setAttribute('fill','rgba(42,127,255,.15)');cr.setAttribute('stroke','#2a7fff');
+  cr.setAttribute('stroke-width','2');cr.setAttribute('filter','url(#glow)');
+  cg.appendChild(cr);
+  cg.appendChild(svgTxt(cx,cy-5,lang==='zh'?'调度中枢':'Orchestrator','#2a7fff','11','600'));
+  cg.appendChild(svgTxt(cx,cy+9,'Orchestrator','rgba(120,165,220,.7)','7','400'));
+  nodes.appendChild(cg);
 }
 function svgTxt(x,y,text,fill,size,weight){
   const t=document.createElementNS('http://www.w3.org/2000/svg','text');
@@ -1070,10 +1074,13 @@ function applyData(data){
   trendChart.update('none');
 
   const r=data.resources||{};
-  updGauge(gCpu,'gv-cpu',r.cpu||0);updGauge(gMem,'gv-mem',r.memory||0);updGauge(gGpu,'gv-gpu',r.gpu||0);updGauge(gSto,'gv-sto',r.storage||0);
+  updGauge(gCpu,'gv-cpu',r.cpu||0);updGauge(gMem,'gv-mem',r.memory||0);
+  const gpuVal=r.gpu<0?0:r.gpu; updGauge(gGpu,'gv-gpu',gpuVal); document.getElementById('gv-gpu').textContent=r.gpu<0?'N/A':r.gpu+'%';
+  updGauge(gSto,'gv-sto',r.storage||0);
 
+  const gpuMon=r.gpu<0?0:r.gpu;
   if(monHist.labels.length>MAX_M){['labels','cpu','mem','gpu'].forEach(k=>monHist[k].shift());}
-  monHist.labels.push(now);monHist.cpu.push(r.cpu||0);monHist.mem.push(r.memory||0);monHist.gpu.push(r.gpu||0);
+  monHist.labels.push(now);monHist.cpu.push(r.cpu||0);monHist.mem.push(r.memory||0);monHist.gpu.push(gpuMon);
   updateMonCharts(data);
 
   const aData=[as.running||0,as.idle||0,as.busy||0,as.offline||0];
@@ -1089,6 +1096,8 @@ function applyData(data){
 
   renderTop5(data.top5_agents||[]);
   renderNetwork(data.agents||[]);
+  radarChart.data.datasets[0].data=data.capability_scores||[0,0,0,0,0,0];
+  radarChart.update('none');
   if(data.events&&data.events.length){
     renderEvents(data.events.slice(-10).reverse(),'ev-list');
     renderEvents(data.events.slice(-8).reverse(),'task-ev-list');
@@ -1147,7 +1156,7 @@ function renderAgentsPage(){
     const arc=document.getElementById('agents-radar');
     if(arc)window._agentsRadarChart=new Chart(arc.getContext('2d'),{
       type:'radar',
-      data:{labels:s().radar,datasets:[{label:'',data:[88,90,82,85,78,92],borderColor:'rgba(0,212,255,.8)',backgroundColor:'rgba(0,212,255,.1)',pointBackgroundColor:'#00d4ff',pointRadius:3,borderWidth:1.5}]},
+      data:{labels:s().radar,datasets:[{label:'',data:lastData?.capability_scores||[0,0,0,0,0,0],borderColor:'rgba(0,212,255,.8)',backgroundColor:'rgba(0,212,255,.1)',pointBackgroundColor:'#00d4ff',pointRadius:3,borderWidth:1.5}]},
       options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
         scales:{r:{beginAtZero:true,max:100,ticks:{display:false},grid:{color:'rgba(40,130,255,.12)'},angleLines:{color:'rgba(40,130,255,.12)'},pointLabels:{color:'#7ca3d8',font:{size:9}}}},animation:{duration:400}}
     });
@@ -1494,13 +1503,12 @@ function renderMonitorStatic(data){
     [lang==='zh'?'WebSocket 连接':'WS Clients', 1,                  'var(--green)'],
   ].map(([l,v,c])=>`<div class="mr"><span class="mlabel">${l}</span><span class="mval" style="color:${c};">${v}</span></div>`).join('');
 
+  const ollamaAgents=(lastData?.agents||[]).filter(a=>(a.description||'').includes('[ollama-auto]'));
   const ol=document.getElementById('ollama-status');if(ol)ol.innerHTML=[
     {l:lang==='zh'?'服务状态':'Service', v:M.running||'Running', c:'var(--green)', i:'●'},
-    {l:'Model',                          v:'hermes3',             c:'var(--accent2)',i:'⬡'},
-    {l:lang==='zh'?'推理延迟':'Latency', v:'~120ms',              c:'var(--yellow)', i:'⚡'},
+    {l:lang==='zh'?'已发现模型':'Models',v:ollamaAgents.length+' discovered',c:'var(--accent2)',i:'⬡'},
     {l:'API',                            v:'localhost:11434',     c:'var(--text3)',   i:'🔗'},
-    {l:lang==='zh'?'上下文窗口':'Context', v:'8192 tokens',       c:'var(--text2)',   i:'📐'},
-    {l:lang==='zh'?'并发请求':'Concurrency',v:'1',                c:'var(--text2)',   i:'⚙'},
+    ...ollamaAgents.slice(0,4).map(a=>({l:a.name,v:a.status,c:a.status==='idle'?'var(--green)':'var(--yellow)',i:'◉'})),
   ].map(m=>`<div class="scard" style="flex:1;min-width:130px;"><div class="slabel">${m.i} ${m.l}</div><div style="font-size:13px;font-weight:700;color:${m.c};margin-top:3px;">${m.v}</div></div>`).join('');
 }
 
