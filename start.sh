@@ -5,7 +5,7 @@ set -e
 PLATFORM_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 BACKEND_DIR="$PLATFORM_DIR/backend"
 SDK_DIR="$PLATFORM_DIR/sdk"
-PORT=${PORT:-9527666}
+PORT=${PORT:-9527}
 
 echo "╔══════════════════════════════════════════════╗"
 echo "║  Multi-Agent 智能体协同平台 v2  启动脚本      ║"

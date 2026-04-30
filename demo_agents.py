@@ -24,7 +24,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../sdk'))
 from agent_sdk import AgentClient, PlannerAgent, CoderAgent, AnalystAgent
 
-PLATFORM = sys.argv[1] if len(sys.argv) > 1 else "http://localhost:9527666"
+PLATFORM = sys.argv[1] if len(sys.argv) > 1 else "http://localhost:9527"
 
 # ── Task sets for each role ───────────────────────────────────────────
 TASK_POOL = {
