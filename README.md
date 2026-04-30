@@ -1,131 +1,103 @@
-# Multi-Agent 智能体协同平台
+> 🌐 **中文** &nbsp;|&nbsp; [English](./README_EN.md)
 
-> 基于 Hermes (Ollama) 的多智能体统一管理平台，带实时看板监控。
+# Multi-Agent 智能体协同平台 v2
+
+<p align="center">
+  <img src="./SGAMultiagnetV1.png" alt="Platform Dashboard" width="800">
+</p>
+
+基于 Hermes (Ollama) 的多智能体统一管理平台，带实时看板监控与持久化存储。
 
 ## 架构
 
 ```
-┌─────────────────────────────────────────────────────┐
-│  前端看板 (frontend/index.html)                        │
-│  WebSocket 实时推送 · Chart.js 可视化                  │
-└────────────────────┬────────────────────────────────┘
-                     │ WS / REST
-┌────────────────────▼────────────────────────────────┐
-│  FastAPI 后端 (backend/main.py)                       │
-│  智能体注册表 · 任务队列 · 事件广播                     │
-└──────────┬─────────────────────┬───────────────────-┘
-           │ HTTP                │ HTTP/WS
-┌──────────▼─────────┐  ┌───────▼──────────────────-──┐
-│  Ollama / Hermes   │  │  你的智能体 (agent_sdk.py)   │
-│  LLM 推理引擎       │  │  注册 · 心跳 · 任务汇报       │
-└────────────────────┘  └─────────────────────────────┘
+前端看板 (frontend/index.html)
+  WebSocket 实时推送 · Chart.js · 中英文切换 · 6 页完整导航
+        ↕ WS / REST
+FastAPI 后端 (backend/main.py)
+  SQLite 持久化 · 33 个 API 端点 · 告警规则引擎 · 流式 LLM · 消息路由
+        ↕ HTTP
+Ollama / Hermes          你的智能体 (sdk/agent_sdk.py)
+  本地 LLM 推理          注册 · 心跳 · 任务 · 多轮对话 · 工具调用
 ```
 
 ## 快速开始
 
-### 1. 启动平台
-
 ```bash
-# 赋予执行权限（只需一次）
 chmod +x scripts/start.sh
-
-# 一键启动（会自动检查 Ollama、Hermes、Python 环境）
 ./scripts/start.sh
-```
-
-脚本会自动：
-- 检查并启动 Ollama 服务
-- 拉取 Hermes 模型（如未安装）
-- 创建 Python 虚拟环境并安装依赖
-- 启动 FastAPI 后端
-- 在浏览器打开前端看板
-
-### 2. 运行演示
-
-```bash
-# 在另一个终端
+# 另一个终端:
 source .venv/bin/activate
 python scripts/demo_agents.py
 ```
 
-这会模拟 5 个智能体注册并执行任务，看板实时更新。
+## v2 新增功能
 
-### 3. 接入你自己的智能体
+| 模块 | 新增 |
+|------|------|
+| 后端 | SQLite 持久化（重启不丢数据）|
+| 后端 | 知识库 CRUD API + 同步触发 |
+| 后端 | 告警规则 API + 自动检测引擎 |
+| 后端 | 智能体间消息路由 + 收件箱 |
+| 后端 | 流式 LLM（SSE）|
+| 后端 | 真实系统资源（psutil）|
+| 后端 | 任务搜索/过滤/分页 |
+| SDK | 断线自动重连 |
+| SDK | `llm_stream()` 流式输出 |
+| SDK | `llm_with_tools()` 工具调用 |
+| SDK | 多轮对话（`remember=True`）|
+| SDK | `send_message()` / `get_inbox()` |
+| SDK | `@agent.tool()` 装饰器 |
+| 前端 | 知识库/告警数据对接真实 API |
+| 前端 | 中英文无缝切换（32 组 i18n 键）|
+| 前端 | 6 页完整导航（含告警规则管理）|
+
+## API 速查
+
+```
+POST /api/agents/register          注册智能体
+POST /api/agents/{id}/heartbeat    心跳
+POST /api/agents/{id}/message      发消息
+GET  /api/agents/{id}/inbox        收件箱
+POST /api/tasks                    创建任务
+POST /api/tasks/{id}/complete      完成任务
+GET  /api/knowledge                知识库列表
+POST /api/knowledge/{id}/sync      触发同步
+GET  /api/alerts/rules             告警规则
+POST /api/alerts/rules             新增规则
+POST /api/chat                     LLM 推理（支持流式）
+GET  /api/stats                    全局快照
+WS   /ws                           实时推送
+GET  /health                       健康检查
+GET  /docs                         Swagger UI
+```
+
+## SDK 速查
 
 ```python
-import asyncio
-from sdk.agent_sdk import AgentClient
+from sdk.agent_sdk import AgentClient, AnalystAgent
 
-agent = AgentClient(
-    name="我的智能体",
-    role="analyzer",           # planner / coder / retriever / analyzer / chat / evaluator / custom
-    capabilities=["数据分析", "报告生成"],
-    platform_url="http://localhost:8000",
-)
+agent = AgentClient(name="我的智能体", role="analyzer")
 
-# 可选：使用 Hermes LLM
-async def main():
-    await agent.register()
-    
-    # 创建并完成一个任务
-    task_id = await agent.create_task("分析用户数据", priority="P1")
-    result = await agent.llm("分析以下数据并给出洞察：...")
-    await agent.complete_task(task_id, summary=result[:100])
-    
-    # 保持心跳
-    await agent.run()
+# 单次 LLM
+answer = await agent.llm("分析这段数据...")
 
-asyncio.run(main())
+# 多轮对话
+await agent.llm("问题1", remember=True)
+await agent.llm("追问", remember=True)
+agent.clear_history()
+
+# 流式输出
+async for token in agent.llm_stream("生成报告..."):
+    print(token, end="", flush=True)
+
+# 工具调用
+@agent.tool(name="calc", description="计算表达式")
+async def calc(expr: str) -> str:
+    return str(eval(expr))
+result = await agent.llm_with_tools("计算 (100+50)*3/5")
+
+# 消息
+await agent.send_message(other_agent_id, "请协助处理任务")
+msgs = await agent.get_inbox()
 ```
-
-## API 参考
-
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| POST | `/api/agents/register` | 注册智能体 |
-| POST | `/api/agents/{id}/heartbeat` | 发送心跳 |
-| DELETE | `/api/agents/{id}` | 下线 |
-| POST | `/api/tasks` | 创建任务 |
-| POST | `/api/tasks/{id}/complete` | 完成任务 |
-| POST | `/api/chat` | 调用 Hermes LLM |
-| GET  | `/api/stats` | 获取全局统计 |
-| WS   | `/ws` | 实时推送 |
-| GET  | `/docs` | Swagger API 文档 |
-
-## 项目结构
-
-```
-multi-agent-platform/
-├── backend/
-│   ├── main.py              # FastAPI 后端
-│   └── requirements.txt
-├── frontend/
-│   └── index.html           # 看板（单文件，无需构建）
-├── sdk/
-│   └── agent_sdk.py         # 智能体 SDK
-└── scripts/
-    ├── start.sh             # 一键启动
-    └── demo_agents.py       # 演示脚本
-```
-
-## 自定义 Hermes 模型
-
-编辑 `backend/main.py` 顶部：
-
-```python
-HERMES_MODEL = "hermes3"   # 改为你的模型名，如 "nous-hermes2"
-```
-
-查看已安装模型：`ollama list`
-
-## 看板功能
-
-- **全局态势总览** — 智能体数、任务数、交互次数、数据处理量
-- **多智能体协同网络** — 实时展示各智能体状态与连接关系
-- **任务执行趋势** — 折线图，实时滚动
-- **智能体能力分布** — 雷达图
-- **系统资源监控** — CPU/内存/GPU/存储仪表盘
-- **协同事件流** — 实时事件日志
-- **智能体状态/任务优先级** — 甜甜圈图
-- **Top5 智能体** — 按任务完成数排行
-- **告警与通知** — 系统告警面板
