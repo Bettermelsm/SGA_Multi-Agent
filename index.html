@@ -220,6 +220,7 @@ nav{display:flex;gap:2px;}
     <button class="nav-btn" data-page="alerts">告警中心</button>
   </nav>
   <div class="header-right">
+    <span style="font-size:10px;color:var(--text3);background:rgba(42,127,255,.1);border:1px solid rgba(42,127,255,.2);border-radius:10px;padding:2px 8px;margin-right:6px;">v1.2.1</span>
     <button class="lang-btn" id="lang-btn" onclick="toggleLang()">EN</button>
     <div><div id="clock">--:--:--</div><div id="clock-date">----</div></div>
     <div class="ws-dot" id="ws-dot"></div>
@@ -645,8 +646,8 @@ nav{display:flex;gap:2px;}
 
 <script>
 'use strict';
-const API=window.location.protocol==='file:'?'http://localhost:8000':window.location.origin;
-const WS_URL=window.location.protocol==='file:'?'ws://localhost:8000/ws':((window.location.protocol==='https:'?'wss:':'ws:')+'//'+window.location.host+'/ws');
+const API=window.location.protocol==='file:'?'http://localhost:9527666':window.location.origin;
+const WS_URL=window.location.protocol==='file:'?'ws://localhost:9527666/ws':((window.location.protocol==='https:'?'wss:':'ws:')+'//'+window.location.host+'/ws');
 
 // ══ i18n ══════════════════════════════════════════════
 const STRINGS={
@@ -1075,10 +1076,10 @@ function applyData(data){
 
   const r=data.resources||{};
   updGauge(gCpu,'gv-cpu',r.cpu||0);updGauge(gMem,'gv-mem',r.memory||0);
-  const gpuVal=r.gpu<0?0:r.gpu; updGauge(gGpu,'gv-gpu',gpuVal); document.getElementById('gv-gpu').textContent=r.gpu<0?'N/A':r.gpu+'%';
+  const gpuRaw=r.gpu??-1;const gpuVal=gpuRaw<0?0:gpuRaw; updGauge(gGpu,'gv-gpu',gpuVal); document.getElementById('gv-gpu').textContent=gpuRaw<0?'N/A':gpuRaw+'%';
   updGauge(gSto,'gv-sto',r.storage||0);
 
-  const gpuMon=r.gpu<0?0:r.gpu;
+  const gpuMon=gpuRaw<0?0:gpuRaw;
   if(monHist.labels.length>MAX_M){['labels','cpu','mem','gpu'].forEach(k=>monHist[k].shift());}
   monHist.labels.push(now);monHist.cpu.push(r.cpu||0);monHist.mem.push(r.memory||0);monHist.gpu.push(gpuMon);
   updateMonCharts(data);
@@ -1379,7 +1380,7 @@ async function doAddKb(){
     }
   }catch(e){}
 }
-function doKbQuery(){
+async function doKbQuery(){
   const q=document.getElementById('kb-q-input').value.trim();if(!q)return;
   const el=document.getElementById('kb-result');if(!el)return;
   const S=s(),K=S.kb2||{};
@@ -1464,14 +1465,15 @@ function updateMonCharts(data){
   }
   // update sparkline current values
   const r=data?.resources||{};
-  const cur=document.getElementById('cpu-cur');if(cur)cur.textContent=r.cpu+'%';
-  const mcur=document.getElementById('mem-cur');if(mcur)mcur.textContent=r.memory+'%';
-  const gcur=document.getElementById('gpu-cur');if(gcur)gcur.textContent=r.gpu+'%';
+  const cur=document.getElementById('cpu-cur');if(cur)cur.textContent=(r.cpu??0)+'%';
+  const mcur=document.getElementById('mem-cur');if(mcur)mcur.textContent=(r.memory??0)+'%';
+  const gcur=document.getElementById('gpu-cur');if(gcur)gcur.textContent=(r.gpu??-1)<0?'N/A':r.gpu+'%';
   // big gauges
   const S=s(),M=S.monitor2||{};
-  updMonGauge(monGauges.cpu,'mgv-cpu',r.cpu||0,{id:'mon-cpu-sub',text:r.cpu<50?(M.idle||'Idle'):'Active'});
+  const gMon=(r.gpu??-1)<0?0:r.gpu;
+  updMonGauge(monGauges.cpu,'mgv-cpu',r.cpu||0,{id:'mon-cpu-sub',text:(r.cpu||0)<50?(M.idle||'Idle'):'Active'});
   updMonGauge(monGauges.mem,'mgv-mem',r.memory||0,{id:'mon-mem-sub',text:`${Math.round((r.memory||0)*0.16)} GB used`});
-  updMonGauge(monGauges.gpu,'mgv-gpu',r.gpu||0,{id:'mon-gpu-sub',text:`VRAM ${r.gpu||0}%`});
+  updMonGauge(monGauges.gpu,'mgv-gpu',gMon,{id:'mon-gpu-sub',text:gMon<0?'N/A':`VRAM ${gMon}%`});
   updMonGauge(monGauges.sto,'mgv-sto',r.storage||0,{id:'mon-sto-sub',text:`${Math.round((r.storage||0)*1.2)} GB used`});
   renderMonLogList();
 }

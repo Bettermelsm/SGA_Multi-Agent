@@ -56,7 +56,7 @@ class AgentClient:
         name: str,
         role: str,
         capabilities: list[str] | None = None,
-        platform_url: str = "http://localhost:8000",
+        platform_url: str = "http://localhost:9527666",
         description: str = "",
         heartbeat_interval: int = 15,
         reconnect_delay: int = 5,
@@ -446,7 +446,7 @@ class AgentClient:
 class PlannerAgent(AgentClient):
     """Breaks a high-level goal into actionable steps using Hermes."""
 
-    def __init__(self, platform_url: str = "http://localhost:8000"):
+    def __init__(self, platform_url: str = "http://localhost:9527666"):
         super().__init__(
             name="规划智能体",
             role="planner",
@@ -470,7 +470,7 @@ class PlannerAgent(AgentClient):
 class CoderAgent(AgentClient):
     """Generates and reviews code."""
 
-    def __init__(self, platform_url: str = "http://localhost:8000"):
+    def __init__(self, platform_url: str = "http://localhost:9527666"):
         super().__init__(
             name="代码智能体",
             role="coder",
@@ -512,7 +512,7 @@ class CoderAgent(AgentClient):
 class AnalystAgent(AgentClient):
     """Data analysis and insight generation."""
 
-    def __init__(self, platform_url: str = "http://localhost:8000"):
+    def __init__(self, platform_url: str = "http://localhost:9527666"):
         super().__init__(
             name="分析智能体",
             role="analyzer",
@@ -568,7 +568,7 @@ if __name__ == "__main__":
     }
 
     role = sys.argv[1] if len(sys.argv) > 1 else "generic"
-    url  = sys.argv[2] if len(sys.argv) > 2 else "http://localhost:8000"
+    url  = sys.argv[2] if len(sys.argv) > 2 else "http://localhost:9527666"
 
     cls = AGENTS.get(role, AgentClient)
     if cls is AgentClient:

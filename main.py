@@ -307,11 +307,12 @@ def _get_gpu_utilization() -> int:
     try:
         import pynvml
         pynvml.nvmlInit()
-        handle = pynvml.nvmlDeviceGetHandleByIndex(0)
-        util = pynvml.nvmlDeviceGetUtilizationRates(handle)
-        gpu = util.gpu
-        pynvml.nvmlShutdown()
-        return gpu
+        try:
+            handle = pynvml.nvmlDeviceGetHandleByIndex(0)
+            util = pynvml.nvmlDeviceGetUtilizationRates(handle)
+            return util.gpu
+        finally:
+            pynvml.nvmlShutdown()
     except Exception:
         return -1
 
@@ -321,7 +322,7 @@ def get_real_resources() -> dict:
     try:
         cpu  = round(psutil.cpu_percent(interval=None), 1)
         mem  = psutil.virtual_memory()
-        disk = psutil.disk_usage("/")
+        disk = psutil.disk_usage("C:\\" if os.name == "nt" else "/")
         gpu  = _get_gpu_utilization()
         return {
             "cpu":          cpu,
@@ -453,7 +454,6 @@ class MessageReq(BaseModel):
 # ══════════════════════════════════════════════════════════
 #  Startup / background tasks
 # ══════════════════════════════════════════════════════════
-@app.on_event("startup")
 async def _sync_ollama_models():
     """Discover Ollama models and register/deregister them as platform agents."""
     try:
@@ -764,10 +764,12 @@ async def list_tasks(
     sql += " ORDER BY created_at DESC LIMIT ? OFFSET ?"
     params += [limit, offset]
     tasks = [dict(t) for t in db().execute(sql, params).fetchall()]
-    total = db().execute(
-        "SELECT COUNT(*) as c FROM tasks" + (" WHERE 1=1"+
-        ("" if not status else f" AND status='{status}'")), []
-    ).fetchone()["c"]
+    count_sql = "SELECT COUNT(*) as c FROM tasks"
+    count_params = []
+    if status:
+        count_sql += " WHERE status=?"
+        count_params.append(status)
+    total = db().execute(count_sql, count_params).fetchone()["c"]
     return {"tasks": tasks, "total": total, "limit": limit, "offset": offset}
 
 
